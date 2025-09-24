@@ -31,6 +31,14 @@
     enabled: yes
   when: ansible_distribution == "Amazon" and ansible_distribution_major_version == "2023"
 
+- name: Ensure python3 and pip3 are installed (Amazon Linux / RHEL)
+  ansible.builtin.yum:
+    name:
+      - python3
+      - python3-pip
+    state: present
+  when: ansible_os_family == "RedHat"  
+
 - name: Ensure psycopg2 is installed
   ansible.builtin.pip:
     name: psycopg2-binary
