@@ -5,6 +5,15 @@
       - python3-pip
     state: present
 
+- name: Ensure boto3 and botocore are installed
+  ansible.builtin.pip:
+    name:
+      - boto3
+      - botocore
+    state: present
+    executable: pip3
+
+
 - name: Download Flask artifact from S3
   amazon.aws.aws_s3:
     bucket: dual-app-artifacts
@@ -22,10 +31,11 @@
 
 
 - name: Extract Flask artifact
-  unarchive:
-    src: "s3://dual-app-artifacts/flask/flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+  ansible.builtin.unarchive:
+    src: "/tmp/flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
     dest: /opt/flask-app
     remote_src: yes
+
 
 - name: Install Flask dependencies
   pip:
