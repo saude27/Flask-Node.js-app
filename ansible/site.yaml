@@ -10,4 +10,4 @@
   roles:
     - postgres
     - flask
-    - node
+    - node.js
