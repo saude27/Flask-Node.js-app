@@ -2,6 +2,18 @@
   yum:
     name: nodejs
     state: present
+    
+- name: Set Node.js artifact filename
+  ansible.builtin.set_fact:
+    node_artifact: "node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+
+- name: Download Node.js artifact from S3
+  amazon.aws.aws_s3:
+    bucket: dual-app-artifacts
+    object: "node/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+    dest: "/tmp/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+    mode: get
+    region: eu-west-2
 
 - name: Ensure Node.js app directory exists
   ansible.builtin.file:
@@ -11,12 +23,12 @@
     group: "{{ ansible_user | default('ec2-user') }}"
     mode: '0755'
 
-
 - name: Extract Node.js artifact
-  unarchive:
-    src: "s3://dual-app-artifacts/node/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+  ansible.builtin.unarchive:
+    src: "/tmp/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
     dest: /opt/node-app
     remote_src: yes
+
 
 - name: Install Node.js dependencies
   command: npm install
