@@ -5,6 +5,7 @@ pipeline {
         S3_BUCKET = "dual-app-artifacts"
         BUILD_TAG = "${env.BUILD_NUMBER}"   
         AWS_CREDS = 'aws-creds-id'
+        AWS_REGION = 'eu-west-2'
     }
 
     stages {
@@ -17,13 +18,19 @@ pipeline {
         stage('Detect App Folders') {
             steps {
                 script {
-        
-                    def flaskFolder = sh(script: "find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do [ -f \"\$d/requirements.txt\" ] && echo \$d && exit; done", returnStdout: true).trim()
+                    def flaskFolder = sh(script: """
+                        find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do
+                            [ -f "\$d/requirements.txt" ] && echo \$d && exit
+                        done
+                    """, returnStdout: true).trim()
                     if (!flaskFolder) { error "Flask app folder not found!" }
                     env.FLASK_DIR = flaskFolder
 
-                    
-                    def nodeFolder = sh(script: "find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do [ -f \"\$d/package.json\" ] && echo \$d && exit; done", returnStdout: true).trim()
+                    def nodeFolder = sh(script: """
+                        find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do
+                            [ -f "\$d/package.json" ] && echo \$d && exit
+                        done
+                    """, returnStdout: true).trim()
                     if (!nodeFolder) { error "Node.js app folder not found!" }
                     env.NODE_DIR = nodeFolder
 
@@ -39,8 +46,10 @@ pipeline {
                     sh """
                     echo "Packaging Flask app..."
                     cd ${env.FLASK_DIR}
-                    tar -czf flask-app-${BUILD_TAG}.tar.gz --warning=no-file-changed .
-                    aws s3 cp flask-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/flask/
+                    ARTIFACT=\$(pwd)/flask-app-${BUILD_TAG}.tar.gz
+                    tar -czf \$ARTIFACT --warning=no-file-changed
+                    ls -l \$ARTIFACT
+                    aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
                     """
                 }
             }
@@ -52,8 +61,10 @@ pipeline {
                     sh """
                     echo "Packaging Node.js app..."
                     cd ${env.NODE_DIR}
-                    tar -czf node-app-${BUILD_TAG}.tar.gz --warning=no-file-changed .
-                    aws s3 cp node-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/node/
+                    ARTIFACT=\$(pwd)/node-app-${BUILD_TAG}.tar.gz
+                    tar -czf \$ARTIFACT --warning=no-file-changed
+                    ls -l \$ARTIFACT
+                    aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
                     """
                 }
             }
@@ -78,7 +89,7 @@ pipeline {
                         if [ \$total -gt 5 ]; then
                             for f in "\${files[@]:0:total-5}"; do
                                 echo "Deleting old artifact: \$f"
-                                aws s3 rm s3://${S3_BUCKET}/\$f
+                                aws s3 rm s3://${S3_BUCKET}/\$f --region ${AWS_REGION}
                             done
                         fi
                     done
