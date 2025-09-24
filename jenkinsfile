@@ -4,7 +4,7 @@ pipeline {
     environment {
         S3_BUCKET = "dual-app-artifacts"
         BUILD_TAG = "${env.BUILD_NUMBER}"   
-        AWS_CREDS = 'aws-creds-id' // Replace with your Jenkins AWS credentials ID
+        AWS_CREDS = 'aws-creds-id'
     }
 
     stages {
@@ -17,12 +17,12 @@ pipeline {
         stage('Detect App Folders') {
             steps {
                 script {
-                    // Detect Flask app folder (contains app.py or requirements.txt)
+        
                     def flaskFolder = sh(script: "find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do [ -f \"\$d/requirements.txt\" ] && echo \$d && exit; done", returnStdout: true).trim()
                     if (!flaskFolder) { error "Flask app folder not found!" }
                     env.FLASK_DIR = flaskFolder
 
-                    // Detect Node.js app folder (contains package.json)
+                    
                     def nodeFolder = sh(script: "find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do [ -f \"\$d/package.json\" ] && echo \$d && exit; done", returnStdout: true).trim()
                     if (!nodeFolder) { error "Node.js app folder not found!" }
                     env.NODE_DIR = nodeFolder
