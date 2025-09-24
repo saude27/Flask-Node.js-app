@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'ubuntu-agent' } 
+    agent { label 'build-agent' }
 
     environment {
         S3_BUCKET   = "dual-app-artifacts"
@@ -21,13 +21,39 @@ pipeline {
                 sh '''
                     #!/bin/bash
                     set -e
-                    echo "Installing Python3, virtualenv, pip, and Node.js..."
-                    sudo yum install -y python3 python3-pip python3-virtualenv
-                    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-                    sudo yum install -y nodejs
+                    echo "Detecting OS..."
+                    if [ -f /etc/os-release ]; then
+                        . /etc/os-release
+                        OS_ID=$ID
+                        OS_VERSION=$VERSION_ID
+                    else
+                        echo "Cannot detect OS, exiting."
+                        exit 1
+                    fi
+                    echo "Detected OS: $OS_ID $OS_VERSION"
+
+                    if [[ "$OS_ID" == "ubuntu" || "$OS_ID" == "debian" ]]; then
+                        echo "Installing dependencies on Ubuntu/Debian..."
+                        sudo apt update -y
+                        sudo apt install -y python3 python3-venv python3-pip curl
+                        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                        sudo apt install -y nodejs
+
+                    elif [[ "$OS_ID" == "amzn" || "$OS_ID" == "rhel" || "$OS_ID" == "centos" ]]; then
+                        echo "Installing dependencies on Amazon Linux / RHEL..."
+                        sudo yum install -y python3 python3-pip python3-virtualenv curl
+                        curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+                        sudo yum install -y nodejs
+                    else
+                        echo "Unsupported OS: $OS_ID"
+                        exit 1
+                    fi
+
+                    # Verify installations
+                    python3 --version
+                    pip3 --version
                     node -v
                     npm -v
-                    python3 --version
                 '''
             }
         }
@@ -169,6 +195,7 @@ pipeline {
         }
     }
 }
+
 
 
 
