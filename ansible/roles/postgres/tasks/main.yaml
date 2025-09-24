@@ -1,18 +1,36 @@
-- name: Install PostgreSQL
-  yum:
-    name: postgresql-server
-    state: present
+- name: Add PostgreSQL PGDG repository (Amazon Linux 2023)
+  ansible.builtin.yum_repository:
+    name: pgdg
+    description: "PostgreSQL RPM Repository"
+    baseurl: https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/
+    gpgcheck: yes
+    gpgkey: https://download.postgresql.org/pub/repos/yum/RPM-GPG-KEY-PGDG
+    enabled: yes
+  when: ansible_distribution == "Amazon" and ansible_distribution_major_version == "2023"
 
-- name: Initialize PostgreSQL DB
-  command: postgresql-setup initdb
+- name: Install PostgreSQL 15 packages (Amazon Linux 2023)
+  dnf:
+    name:
+      - postgresql15
+      - postgresql15-server
+      - postgresql15-contrib
+      - postgresql15-devel
+    state: present
+  when: ansible_distribution == "Amazon" and ansible_distribution_major_version == "2023"
+
+- name: Initialize PostgreSQL 15 database (Amazon Linux 2023)
+  command: "/usr/bin/postgresql-setup --initdb"
   args:
     creates: /var/lib/pgsql/data/PG_VERSION
+  when: ansible_distribution == "Amazon" and ansible_distribution_major_version == "2023"
 
-- name: Ensure PostgreSQL is running
+- name: Ensure PostgreSQL service is running (Amazon Linux 2023)
   service:
     name: postgresql
     state: started
     enabled: yes
+  when: ansible_distribution == "Amazon" and ansible_distribution_major_version == "2023"
+
 
 - name: Create database
   become_user: postgres
