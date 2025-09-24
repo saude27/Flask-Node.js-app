@@ -1,0 +1,13 @@
+- hosts: web
+  become: yes
+  vars:
+    flask_port: 5000
+    node_port: 3000
+    db_name: shared_db
+    db_user: dbuser
+    db_password: dbpassword
+
+  roles:
+    - postgres
+    - flask
+    - node

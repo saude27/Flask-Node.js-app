@@ -1,0 +1,38 @@
+- name: Install Node.js
+  yum:
+    name: nodejs
+    state: present
+
+- name: Extract Node.js artifact
+  unarchive:
+    src: "s3://dual-app-artifacts/node/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+    dest: /opt/node-app
+    remote_src: yes
+
+- name: Install Node.js dependencies
+  command: npm install
+  args:
+    chdir: /opt/node-app
+
+- name: Start Node.js app with systemd
+  copy:
+    dest: /etc/systemd/system/node.service
+    content: |
+      [Unit]
+      Description=Node.js App
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/node /opt/node-app/server.js
+      WorkingDirectory=/opt/node-app
+      Restart=always
+      Environment=DB_HOST=localhost DB_NAME={{ db_name }} DB_USER={{ db_user }} DB_PASS={{ db_password }}
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and start Node service
+  systemd:
+    name: node
+    state: started
+    enabled: yes

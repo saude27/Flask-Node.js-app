@@ -1,0 +1,39 @@
+- name: Install Python3 and pip
+  yum:
+    name:
+      - python3
+      - python3-pip
+    state: present
+
+- name: Extract Flask artifact
+  unarchive:
+    src: "s3://dual-app-artifacts/flask/flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+    dest: /opt/flask-app
+    remote_src: yes
+
+- name: Install Flask dependencies
+  pip:
+    requirements: /opt/flask-app/requirements.txt
+
+- name: Start Flask app with systemd
+  copy:
+    dest: /etc/systemd/system/flask.service
+    content: |
+      [Unit]
+      Description=Flask App
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /opt/flask-app/app.py
+      WorkingDirectory=/opt/flask-app
+      Restart=always
+      Environment=DB_HOST=localhost DB_NAME={{ db_name }} DB_USER={{ db_user }} DB_PASS={{ db_password }}
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and start Flask service
+  systemd:
+    name: flask
+    state: started
+    enabled: yes
