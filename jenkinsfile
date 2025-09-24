@@ -48,7 +48,7 @@ pipeline {
                     cd ${env.FLASK_DIR}
 
                     ARTIFACT=\$(pwd)/flask-app-${BUILD_TAG}.tar.gz
-                    tar -czf \$ARTIFACT --warning=no-file-changed .
+                    tar --ignore-failed-read -czf \$ARTIFACT .
                     ls -lh \$ARTIFACT
 
                     echo "Checking AWS CLI..."
@@ -70,7 +70,7 @@ pipeline {
                     cd ${env.NODE_DIR}
 
                     ARTIFACT=\$(pwd)/node-app-${BUILD_TAG}.tar.gz
-                    tar -czf \$ARTIFACT --warning=no-file-changed .
+                    tar --ignore-failed-read -czf \$ARTIFACT .
                     ls -lh \$ARTIFACT
 
                     echo "Checking AWS CLI..."
@@ -125,6 +125,7 @@ pipeline {
         }
     }
 }
+
 
 
 
