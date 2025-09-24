@@ -9,6 +9,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 git branch: 'main', url: 'https://github.com/saude27/Flask-Node.js-app.git'
@@ -18,21 +19,19 @@ pipeline {
         stage('Detect App Folders') {
             steps {
                 script {
-                    def flaskFolder = sh(script: """
-                        find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do
-                            [ -f "\$d/requirements.txt" ] && echo \$d && exit
+                    env.FLASK_DIR = sh(script: '''
+                        for d in */ ; do
+                            [ -f "$d/requirements.txt" ] && echo $d && break
                         done
-                    """, returnStdout: true).trim()
-                    if (!flaskFolder) { error "Flask app folder not found!" }
-                    env.FLASK_DIR = flaskFolder
+                    ''', returnStdout: true).trim()
+                    if (!env.FLASK_DIR) { error "Flask app folder not found!" }
 
-                    def nodeFolder = sh(script: """
-                        find . -maxdepth 1 -type d \\( -name '*' ! -name '.git' ! -name '.' \\) | while read d; do
-                            [ -f "\$d/package.json" ] && echo \$d && exit
+                    env.NODE_DIR = sh(script: '''
+                        for d in */ ; do
+                            [ -f "$d/package.json" ] && echo $d && break
                         done
-                    """, returnStdout: true).trim()
-                    if (!nodeFolder) { error "Node.js app folder not found!" }
-                    env.NODE_DIR = nodeFolder
+                    ''', returnStdout: true).trim()
+                    if (!env.NODE_DIR) { error "Node.js app folder not found!" }
 
                     echo "Detected Flask folder: ${env.FLASK_DIR}"
                     echo "Detected Node.js folder: ${env.NODE_DIR}"
@@ -40,67 +39,103 @@ pipeline {
             }
         }
 
-        stage('Package Flask App') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDS}"]]) {
-                    sh """
-                    echo "Packaging Flask app..."
-                    cd ${env.FLASK_DIR}
+        stage('Build Apps') {
+            parallel {
+                stage('Build Flask App') {
+                    steps {
+                        sh '''
+                            #!/bin/bash
+                            set -e
+                            echo "Building Flask app..."
+                            cd ${FLASK_DIR}
+                            python3 -m venv venv
+                            source venv/bin/activate
+                            pip install -r requirements.txt
+                            # Optional: run tests here
+                            # pytest tests/
+                        '''
+                    }
+                }
 
-                    ARTIFACT=\$(pwd)/flask-app-${BUILD_TAG}.tar.gz
-                    tar --ignore-failed-read -czf \$ARTIFACT .
-                    ls -lh \$ARTIFACT
-
-                    echo "Uploading Flask artifact to S3..."
-                    aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
-                    """
+                stage('Build Node.js App') {
+                    steps {
+                        sh '''
+                            #!/bin/bash
+                            set -e
+                            echo "Building Node.js app..."
+                            cd ${NODE_DIR}
+                            npm install
+                            # Optional: run tests here
+                            # npm test
+                        '''
+                    }
                 }
             }
         }
 
-        stage('Package Node.js App') {
+        stage('Package & Upload Flask App') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDS}"]]) {
-                    sh """
-                    echo "Packaging Node.js app..."
-                    cd ${env.NODE_DIR}
+                withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
+                    sh '''
+                        #!/bin/bash
+                        set -e
+                        echo "Packaging Flask app..."
+                        cd ${FLASK_DIR}
+                        ARTIFACT=flask-app-${BUILD_TAG}.tar.gz
+                        tar -czf $ARTIFACT .
+                        ls -lh $ARTIFACT
+                        echo "Uploading Flask artifact to S3..."
+                        aws s3 cp $ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
+                    '''
+                }
+            }
+        }
 
-                    ARTIFACT=\$(pwd)/node-app-${BUILD_TAG}.tar.gz
-                    tar --ignore-failed-read -czf \$ARTIFACT .
-                    ls -lh \$ARTIFACT
-
-                    echo "Uploading Node.js artifact to S3..."
-                    aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
-                    """
+        stage('Package & Upload Node.js App') {
+            steps {
+                withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
+                    sh '''
+                        #!/bin/bash
+                        set -e
+                        echo "Packaging Node.js app..."
+                        cd ${NODE_DIR}
+                        ARTIFACT=node-app-${BUILD_TAG}.tar.gz
+                        tar -czf $ARTIFACT .
+                        ls -lh $ARTIFACT
+                        echo "Uploading Node.js artifact to S3..."
+                        aws s3 cp $ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
+                    '''
                 }
             }
         }
 
         stage('Deploy with Ansible') {
             steps {
-                sh """
-                export ANSIBLE_HOST_KEY_CHECKING=False
-                ansible-playbook -i ansible/inventory.ini ansible/site.yaml
-                """
+                sh '''
+                    #!/bin/bash
+                    export ANSIBLE_HOST_KEY_CHECKING=False
+                    ansible-playbook -i ansible/inventory.ini ansible/site.yaml -e "BUILD_NUMBER=${BUILD_TAG}"
+                '''
             }
         }
 
         stage('Cleanup Old Artifacts') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDS}"]]) {
-                    sh """
-#!/bin/bash
-for folder in flask node; do
-    files=(\$(aws s3 ls s3://${S3_BUCKET}/\$folder/ --recursive | sort | awk '{print \$4}'))
-    total=\${#files[@]}
-    if [ \$total -gt 5 ]; then
-        for f in "\${files[@]:0:total-5}"; do
-            echo "Deleting old artifact: \$f"
-            aws s3 rm s3://${S3_BUCKET}/\$f --region ${AWS_REGION}
-        done
-    fi
-done
-"""
+                withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
+                    sh '''
+                        #!/bin/bash
+                        set -e
+                        for folder in flask node; do
+                            files=($(aws s3 ls s3://${S3_BUCKET}/$folder/ --recursive | sort | awk '{print $4}'))
+                            total=${#files[@]}
+                            if [ $total -gt 5 ]; then
+                                for f in "${files[@]:0:total-5}"; do
+                                    echo "Deleting old artifact: $f"
+                                    aws s3 rm s3://${S3_BUCKET}/$f --region ${AWS_REGION}
+                                done
+                            fi
+                        done
+                    '''
                 }
             }
         }
@@ -118,6 +153,7 @@ done
         }
     }
 }
+
 
 
 
