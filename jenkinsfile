@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'ubuntu-agent' }
+    agent { label 'ubuntu-agent' } 
 
     environment {
         S3_BUCKET   = "dual-app-artifacts"
@@ -13,6 +13,22 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 git branch: 'main', url: 'https://github.com/saude27/Flask-Node.js-app.git'
+            }
+        }
+
+        stage('Prepare Agent') {
+            steps {
+                sh '''
+                    #!/bin/bash
+                    set -e
+                    echo "Installing Python3, virtualenv, pip, and Node.js..."
+                    sudo yum install -y python3 python3-pip python3-virtualenv
+                    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+                    sudo yum install -y nodejs
+                    node -v
+                    npm -v
+                    python3 --version
+                '''
             }
         }
 
@@ -153,6 +169,7 @@ pipeline {
         }
     }
 }
+
 
 
 
