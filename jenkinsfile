@@ -47,7 +47,7 @@ pipeline {
                     echo "Packaging Flask app..."
                     cd ${env.FLASK_DIR}
                     ARTIFACT=\$(pwd)/flask-app-${BUILD_TAG}.tar.gz
-                    tar -czf \$ARTIFACT --warning=no-file-changed
+                    tar -czf \$ARTIFACT --warning=no-file-changed .
                     ls -l \$ARTIFACT
                     aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
                     """
@@ -62,7 +62,7 @@ pipeline {
                     echo "Packaging Node.js app..."
                     cd ${env.NODE_DIR}
                     ARTIFACT=\$(pwd)/node-app-${BUILD_TAG}.tar.gz
-                    tar -czf \$ARTIFACT --warning=no-file-changed
+                    tar -czf \$ARTIFACT --warning=no-file-changed .
                     ls -l \$ARTIFACT
                     aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
                     """
