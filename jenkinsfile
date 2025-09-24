@@ -2,10 +2,10 @@ pipeline {
     agent { label 'ubuntu-agent' }
 
     environment {
-        S3_BUCKET = "dual-app-artifacts"
-        BUILD_TAG = "${env.BUILD_NUMBER}"   
-        AWS_CREDS = 'aws-creds-id'
-        AWS_REGION = 'eu-west-2'
+        S3_BUCKET   = "dual-app-artifacts"
+        BUILD_TAG   = "${env.BUILD_NUMBER}"
+        AWS_CREDS   = 'aws-creds-id'
+        AWS_REGION  = 'eu-west-2'
     }
 
     stages {
@@ -46,9 +46,16 @@ pipeline {
                     sh """
                     echo "Packaging Flask app..."
                     cd ${env.FLASK_DIR}
+
                     ARTIFACT=\$(pwd)/flask-app-${BUILD_TAG}.tar.gz
                     tar -czf \$ARTIFACT --warning=no-file-changed .
-                    ls -l \$ARTIFACT
+                    ls -lh \$ARTIFACT
+
+                    echo "Checking AWS CLI..."
+                    which aws || { echo "AWS CLI not found in PATH"; exit 1; }
+                    aws --version
+
+                    echo "Uploading Flask artifact to S3..."
                     aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
                     """
                 }
@@ -61,9 +68,16 @@ pipeline {
                     sh """
                     echo "Packaging Node.js app..."
                     cd ${env.NODE_DIR}
+
                     ARTIFACT=\$(pwd)/node-app-${BUILD_TAG}.tar.gz
                     tar -czf \$ARTIFACT --warning=no-file-changed .
-                    ls -l \$ARTIFACT
+                    ls -lh \$ARTIFACT
+
+                    echo "Checking AWS CLI..."
+                    which aws || { echo "AWS CLI not found in PATH"; exit 1; }
+                    aws --version
+
+                    echo "Uploading Node.js artifact to S3..."
                     aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
                     """
                 }
