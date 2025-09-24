@@ -24,8 +24,8 @@ pipeline {
                     echo 'Detecting OS...'
                     if [ -f /etc/os-release ]; then
                         . /etc/os-release
-                        OS_ID=$ID
-                        OS_VERSION=$VERSION_ID
+                        OS_ID=\"$ID\"
+                        OS_VERSION=\"$VERSION_ID\"
                     else
                         echo 'Cannot detect OS, exiting.'
                         exit 1
@@ -203,6 +203,7 @@ pipeline {
         }
     }
 }
+
 
 
 
