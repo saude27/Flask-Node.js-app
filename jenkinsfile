@@ -4,6 +4,7 @@ pipeline {
     environment {
         S3_BUCKET = "dual-app-artifacts"
         BUILD_TAG = "${env.BUILD_NUMBER}"   
+        AWS_CREDS = 'aws-creds-id'
     }
 
     stages {
@@ -16,12 +17,20 @@ pipeline {
         stage('Package Flask App') {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
-                                  credentialsId: 'aws-creds-id']]) {
-                    sh """
-                    cd flask-app
-                    tar -czf flask-app-${BUILD_TAG}.tar.gz .
-                    aws s3 cp flask-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/flask/
-                    """
+                                  credentialsId: "${AWS_CREDS}"]]) {
+                    script {
+                        def flaskDir = 'flask_app'
+                        if (fileExists(flaskDir)) {
+                            sh """
+                            echo "Packaging Flask app..."
+                            cd ${flaskDir}
+                            tar -czf flask-app-${BUILD_TAG}.tar.gz .
+                            aws s3 cp flask-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/flask/
+                            """
+                        } else {
+                            error "Flask directory '${flaskDir}' does not exist!"
+                        }
+                    }
                 }
             }
         }
@@ -29,12 +38,20 @@ pipeline {
         stage('Package Node.js App') {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
-                                  credentialsId: 'aws-creds-id']]) {
-                    sh """
-                    cd node-app
-                    tar -czf node-app-${BUILD_TAG}.tar.gz .
-                    aws s3 cp node-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/node/
-                    """
+                                  credentialsId: "${AWS_CREDS}"]]) {
+                    script {
+                        def nodeDir = 'node_app'
+                        if (fileExists(nodeDir)) {
+                            sh """
+                            echo "Packaging Node.js app..."
+                            cd ${nodeDir}
+                            tar -czf node-app-${BUILD_TAG}.tar.gz .
+                            aws s3 cp node-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/node/
+                            """
+                        } else {
+                            error "Node.js directory '${nodeDir}' does not exist!"
+                        }
+                    }
                 }
             }
         }
@@ -51,13 +68,14 @@ pipeline {
         stage('Cleanup Old Artifacts') {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
-                                  credentialsId: 'aws-creds-id']]) {
+                                  credentialsId: "${AWS_CREDS}"]]) {
                     sh """
                     for folder in flask node; do
                         files=(\$(aws s3 ls s3://${S3_BUCKET}/\$folder/ --recursive | sort | awk '{print \$4}'))
                         total=\${#files[@]}
                         if [ \$total -gt 5 ]; then
                             for f in "\${files[@]:0:total-5}"; do
+                                echo "Deleting old artifact: \$f"
                                 aws s3 rm s3://${S3_BUCKET}/\$f
                             done
                         fi
@@ -72,6 +90,13 @@ pipeline {
         always {
             cleanWs()   
         }
+        success {
+            echo "Pipeline completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed. Check logs for details."
+        }
     }
 }
+
 
