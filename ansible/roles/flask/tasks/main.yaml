@@ -14,14 +14,19 @@
     executable: pip3
 
 
+- name: Set Flask artifact filename
+  ansible.builtin.set_fact:
+    flask_artifact: "flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+
 - name: Download Flask artifact from S3
   amazon.aws.aws_s3:
     bucket: dual-app-artifacts
-    object: flask/flask-app-25.tar.gz
-    dest: /tmp/flask-app-25.tar.gz
-    mode: get    
+    object: "flask/{{ flask_artifact }}"
+    dest: "/tmp/{{ flask_artifact }}"
+    mode: get
+    region: eu-west-2
 
-- name: Ensure flask app directory exists
+- name: Ensure Flask app directory exists
   ansible.builtin.file:
     path: /opt/flask-app
     state: directory
@@ -29,12 +34,12 @@
     group: "{{ ansible_user | default('ec2-user') }}"
     mode: '0755'
 
-
 - name: Extract Flask artifact
   ansible.builtin.unarchive:
-    src: "/tmp/flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+    src: "/tmp/{{ flask_artifact }}"
     dest: /opt/flask-app
     remote_src: yes
+
 
 
 - name: Install Flask dependencies
