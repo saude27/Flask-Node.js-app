@@ -5,6 +5,13 @@
       - python3-pip
     state: present
 
+- name: Download Flask artifact from S3
+  amazon.aws.aws_s3:
+    bucket: dual-app-artifacts
+    object: flask/flask-app-25.tar.gz
+    dest: /tmp/flask-app-25.tar.gz
+    mode: get    
+
 - name: Ensure flask app directory exists
   ansible.builtin.file:
     path: /opt/flask-app
