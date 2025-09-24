@@ -51,10 +51,6 @@ pipeline {
                     tar --ignore-failed-read -czf \$ARTIFACT .
                     ls -lh \$ARTIFACT
 
-                    echo "Checking AWS CLI..."
-                    which aws || { echo "AWS CLI not found in PATH"; exit 1; }
-                    aws --version
-
                     echo "Uploading Flask artifact to S3..."
                     aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
                     """
@@ -73,10 +69,6 @@ pipeline {
                     tar --ignore-failed-read -czf \$ARTIFACT .
                     ls -lh \$ARTIFACT
 
-                    echo "Checking AWS CLI..."
-                    which aws || { echo "AWS CLI not found in PATH"; exit 1; }
-                    aws --version
-
                     echo "Uploading Node.js artifact to S3..."
                     aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
                     """
@@ -88,7 +80,7 @@ pipeline {
             steps {
                 sh """
                 export ANSIBLE_HOST_KEY_CHECKING=False
-                ansible-playbook -i inventory.ini ansible/site.yaml
+                ansible-playbook -i ansible/inventory.ini ansible/site.yml
                 """
             }
         }
@@ -97,17 +89,18 @@ pipeline {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDS}"]]) {
                     sh """
-                    for folder in flask node; do
-                        files=(\$(aws s3 ls s3://${S3_BUCKET}/\$folder/ --recursive | sort | awk '{print \$4}'))
-                        total=\${#files[@]}
-                        if [ \$total -gt 5 ]; then
-                            for f in "\${files[@]:0:total-5}"; do
-                                echo "Deleting old artifact: \$f"
-                                aws s3 rm s3://${S3_BUCKET}/\$f --region ${AWS_REGION}
-                            done
-                        fi
-                    done
-                    """
+#!/bin/bash
+for folder in flask node; do
+    files=(\$(aws s3 ls s3://${S3_BUCKET}/\$folder/ --recursive | sort | awk '{print \$4}'))
+    total=\${#files[@]}
+    if [ \$total -gt 5 ]; then
+        for f in "\${files[@]:0:total-5}"; do
+            echo "Deleting old artifact: \$f"
+            aws s3 rm s3://${S3_BUCKET}/\$f --region ${AWS_REGION}
+        done
+    fi
+done
+"""
                 }
             }
         }
@@ -125,6 +118,7 @@ pipeline {
         }
     }
 }
+
 
 
 
