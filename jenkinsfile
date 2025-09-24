@@ -1,0 +1,77 @@
+pipeline {
+    agent { label 'ubuntu-agent' }
+
+    environment {
+        S3_BUCKET = "dual-app-artifacts"
+        BUILD_TAG = "${env.BUILD_NUMBER}"   
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/saude27/Flask-Node.js-app.git'
+            }
+        }
+
+        stage('Package Flask App') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
+                                  credentialsId: 'aws-creds-id']]) {
+                    sh """
+                    cd flask-app
+                    tar -czf flask-app-${BUILD_TAG}.tar.gz .
+                    aws s3 cp flask-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/flask/
+                    """
+                }
+            }
+        }
+
+        stage('Package Node.js App') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
+                                  credentialsId: 'aws-creds-id']]) {
+                    sh """
+                    cd node-app
+                    tar -czf node-app-${BUILD_TAG}.tar.gz .
+                    aws s3 cp node-app-${BUILD_TAG}.tar.gz s3://${S3_BUCKET}/node/
+                    """
+                }
+            }
+        }
+
+        stage('Deploy with Ansible') {
+            steps {
+                sh """
+                export ANSIBLE_HOST_KEY_CHECKING=False
+                ansible-playbook -i inventory.ini site.yml
+                """
+            }
+        }
+
+        stage('Cleanup Old Artifacts') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
+                                  credentialsId: 'aws-creds-id']]) {
+                    sh """
+                    for folder in flask node; do
+                        files=(\$(aws s3 ls s3://${S3_BUCKET}/\$folder/ --recursive | sort | awk '{print \$4}'))
+                        total=\${#files[@]}
+                        if [ \$total -gt 5 ]; then
+                            for f in "\${files[@]:0:total-5}"; do
+                                aws s3 rm s3://${S3_BUCKET}/\$f
+                            done
+                        fi
+                    done
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()   
+        }
+    }
+}
+
