@@ -5,6 +5,15 @@
       - python3-pip
     state: present
 
+- name: Ensure flask app directory exists
+  ansible.builtin.file:
+    path: /opt/flask-app
+    state: directory
+    owner: "{{ ansible_user | default('ec2-user') }}"
+    group: "{{ ansible_user | default('ec2-user') }}"
+    mode: '0755'
+
+
 - name: Extract Flask artifact
   unarchive:
     src: "s3://dual-app-artifacts/flask/flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
