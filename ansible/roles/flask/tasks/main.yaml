@@ -19,7 +19,18 @@
   when: ansible_os_family == "RedHat"
   become: yes
 
-# Set artifact filename based on Jenkins BUILD_NUMBER
+- name: Install Python and dependencies on Debian/Ubuntu
+  apt:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+  become: yes
+
+# Set Flask artifact filename based on Jenkins BUILD_NUMBER
 - name: Set Flask artifact filename
   ansible.builtin.set_fact:
     flask_artifact: "flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
@@ -43,7 +54,7 @@
   become: yes
   become_user: ec2-user
 
-# Create virtual environment
+# Create Python virtualenv without pip
 - name: Create Python virtualenv without pip
   ansible.builtin.command:
     cmd: python3 -m venv --without-pip /opt/flask-app/venv
@@ -65,6 +76,7 @@
   become: yes
   become_user: ec2-user
 
+# Check if requirements.txt exists
 - name: Check if requirements.txt exists
   ansible.builtin.stat:
     path: /opt/flask-app/requirements.txt
@@ -72,7 +84,7 @@
   become: yes
   become_user: ec2-user  
 
-# Install Flask dependencies
+# Install Flask dependencies in virtualenv
 - name: Install Flask dependencies in virtualenv
   ansible.builtin.pip:
     requirements: /opt/flask-app/requirements.txt
@@ -96,7 +108,7 @@
     mode: '0600'
   become: yes
 
-# Create systemd service
+# Create systemd service for Flask
 - name: Create systemd service for Flask
   ansible.builtin.copy:
     dest: /etc/systemd/system/flask.service
@@ -122,7 +134,7 @@
     mode: '0644'
   become: yes
 
-# Reload systemd to pick up new service
+# Reload systemd daemon
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: yes
