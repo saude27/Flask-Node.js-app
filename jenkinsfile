@@ -23,11 +23,11 @@ pipeline {
                     echo "Detecting OS..."
                     if [ -f /etc/os-release ]; then
                         . /etc/os-release
-                        OS_ID="${ID:-unknown}"
-                        OS_VERSION="${VERSION_ID:-unknown}"
+                        OS_ID="$ID"
+                        OS_VERSION="$VERSION_ID"
                     else
-                        OS_ID=$(uname -s | tr '[:upper:]' '[:lower:]')
-                        OS_VERSION=$(uname -r)
+                        echo "Cannot detect OS, exiting."
+                        exit 1
                     fi
                     echo "Detected OS: $OS_ID $OS_VERSION"
 
@@ -62,20 +62,14 @@ pipeline {
                 script {
                     env.FLASK_DIR = sh(script: '''
                         for d in */ ; do
-                            if [ -f "$d/requirements.txt" ]; then
-                                echo $d
-                                break
-                            fi
+                            [ -f "$d/requirements.txt" ] && echo $d && break
                         done
                     ''', returnStdout: true).trim()
                     if (!env.FLASK_DIR) { error "Flask app folder not found!" }
 
                     env.NODE_DIR = sh(script: '''
                         for d in */ ; do
-                            if [ -f "$d/package.json" ]; then
-                                echo $d
-                                break
-                            fi
+                            [ -f "$d/package.json" ] && echo $d && break
                         done
                     ''', returnStdout: true).trim()
                     if (!env.NODE_DIR) { error "Node.js app folder not found!" }
@@ -97,7 +91,8 @@ pipeline {
                             python3 -m venv venv
                             . venv/bin/activate
                             pip install -r requirements.txt
-                            # pytest tests/   # optional tests
+                            # Optional: run tests
+                            # pytest tests/
                         '''
                     }
                 }
@@ -109,7 +104,8 @@ pipeline {
                             echo "Building Node.js app..."
                             cd "${NODE_DIR}"
                             npm install
-                            # npm test   # optional tests
+                            # Optional: run tests
+                            # npm test
                         '''
                     }
                 }
@@ -166,14 +162,13 @@ pipeline {
                     sh '''
                         set -e
                         for folder in flask node; do
-                            files=($(aws s3 ls "s3://${S3_BUCKET}/$folder/" --recursive | sort | awk '{print $4}'))
-                            total=${#files[@]}
-                            if [ "$total" -gt 5 ]; then
-                                for f in "${files[@]:0:total-5}"; do
+                            echo "Checking old artifacts in s3://${S3_BUCKET}/$folder/"
+                            aws s3 ls "s3://${S3_BUCKET}/$folder/" --recursive | sort | head -n -5 | awk '{print $4}' | while read f; do
+                                if [ -n "$f" ]; then
                                     echo "Deleting old artifact: $f"
                                     aws s3 rm "s3://${S3_BUCKET}/$f" --region "${AWS_REGION}"
-                                done
-                            fi
+                                fi
+                            done
                         done
                     '''
                 }
@@ -193,6 +188,7 @@ pipeline {
         }
     }
 }
+
 
 
 
