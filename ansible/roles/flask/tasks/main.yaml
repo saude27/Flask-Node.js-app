@@ -6,8 +6,10 @@
     owner: ec2-user
     group: ec2-user
     mode: '0755'
+  become: yes
 
-- name: Install Python3, pip, and virtualenv (Amazon Linux / RHEL / CentOS)
+# Install Python, pip, and virtualenv depending on OS
+- name: Install Python and dependencies on RedHat family
   yum:
     name:
       - python3
@@ -17,7 +19,7 @@
   when: ansible_os_family == "RedHat"
   become: yes
 
-- name: Install Python3, pip, and venv (Debian/Ubuntu)
+- name: Install Python and dependencies on Debian family
   apt:
     name:
       - python3
@@ -28,10 +30,12 @@
   when: ansible_os_family == "Debian"
   become: yes
 
+# Set artifact filename based on Jenkins BUILD_NUMBER
 - name: Set Flask artifact filename
   ansible.builtin.set_fact:
     flask_artifact: "flask-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
 
+# Download artifact from S3
 - name: Download Flask artifact from S3
   amazon.aws.aws_s3:
     bucket: dual-app-artifacts
@@ -39,33 +43,40 @@
     dest: "/tmp/{{ flask_artifact }}"
     mode: get
     region: eu-west-2
+  become: yes
 
+# Extract artifact
 - name: Extract Flask artifact
   ansible.builtin.unarchive:
     src: "/tmp/{{ flask_artifact }}"
     dest: /opt/flask-app
     remote_src: yes
+  become: yes
+  become_user: ec2-user
 
-- name: Create Python virtualenv (with pip)
+# Create virtual environment
+- name: Create Python virtualenv without pip
   ansible.builtin.command:
     cmd: python3 -m venv --without-pip /opt/flask-app/venv
     creates: /opt/flask-app/venv
   become: yes
   become_user: ec2-user
 
+# Bootstrap pip in the venv
 - name: Bootstrap pip in virtualenv
   ansible.builtin.command:
     cmd: /opt/flask-app/venv/bin/python -m ensurepip
   become: yes
   become_user: ec2-user
 
+# Upgrade pip to latest
 - name: Upgrade pip in virtualenv
   ansible.builtin.command:
     cmd: /opt/flask-app/venv/bin/python -m pip install --upgrade pip
   become: yes
   become_user: ec2-user
 
-
+# Install Flask dependencies
 - name: Install Flask dependencies in virtualenv
   ansible.builtin.pip:
     requirements: /opt/flask-app/requirements.txt
@@ -73,7 +84,23 @@
     virtualenv_python: python3
   become: yes
   become_user: ec2-user
+  when: ansible.builtin.stat(path='/opt/flask-app/requirements.txt').stat.exists
 
+# Create environment file for Flask
+- name: Create .env file for Flask
+  ansible.builtin.copy:
+    dest: /opt/flask-app/.env
+    content: |
+      DB_HOST=localhost
+      DB_NAME={{ db_name }}
+      DB_USER={{ db_user }}
+      DB_PASS={{ db_password }}
+    owner: ec2-user
+    group: ec2-user
+    mode: '0600'
+  become: yes
+
+# Create systemd service
 - name: Create systemd service for Flask
   ansible.builtin.copy:
     dest: /etc/systemd/system/flask.service
@@ -88,22 +115,29 @@
       WorkingDirectory=/opt/flask-app
       ExecStart=/opt/flask-app/venv/bin/python /opt/flask-app/app.py
       Restart=always
-      Environment=DB_HOST=localhost DB_NAME={{ db_name }} DB_USER={{ db_user }} DB_PASS={{ db_password }}
+      RestartSec=5
+      TimeoutStartSec=30
+      EnvironmentFile=/opt/flask-app/.env
 
       [Install]
       WantedBy=multi-user.target
     owner: root
     group: root
     mode: '0644'
+  become: yes
 
+# Reload systemd to pick up new service
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: yes
+  become: yes
 
+# Enable and start the Flask service
 - name: Enable and start Flask service
   ansible.builtin.systemd:
     name: flask
     state: started
     enabled: yes
+  become: yes
 ...
 
