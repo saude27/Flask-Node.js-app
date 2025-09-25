@@ -6,6 +6,7 @@ pipeline {
         BUILD_TAG   = "${env.BUILD_NUMBER}"
         AWS_CREDS   = 'aws-creds-id'
         AWS_REGION  = 'eu-west-2'
+        VAULT_CRED  = 'ansible-vault-pass' // Jenkins credential ID for vault password
     }
 
     stages {
@@ -32,18 +33,14 @@ pipeline {
                     echo "Detected OS: $OS_ID $OS_VERSION"
 
                     if [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "debian" ]; then
-                        echo "Installing dependencies on Ubuntu/Debian..."
                         sudo apt update -y
                         sudo apt install -y python3 python3-venv python3-pip curl
                         curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
                         sudo apt install -y nodejs
-
                     elif [ "$OS_ID" = "amzn" ] || [ "$OS_ID" = "rhel" ] || [ "$OS_ID" = "centos" ]; then
-                        echo "Installing dependencies on Amazon Linux / RHEL..."
                         sudo yum install -y python3 python3-pip python3-virtualenv curl
                         curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
                         sudo yum install -y nodejs
-
                     else
                         echo "Unsupported OS: $OS_ID"
                         exit 1
@@ -84,29 +81,24 @@ pipeline {
             parallel {
                 stage('Build Flask App') {
                     steps {
-                        sh '''
+                        sh """
                             set -e
-                            echo "Building Flask app..."
-                            cd "${FLASK_DIR}"
+                            cd ${FLASK_DIR}
                             python3 -m venv venv
                             . venv/bin/activate
+                            pip install --upgrade pip
                             pip install -r requirements.txt
-                            # Optional: run tests
-                            # pytest tests/
-                        '''
+                        """
                     }
                 }
 
                 stage('Build Node.js App') {
                     steps {
-                        sh '''
+                        sh """
                             set -e
-                            echo "Building Node.js app..."
-                            cd "${NODE_DIR}"
+                            cd ${NODE_DIR}
                             npm install
-                            # Optional: run tests
-                            # npm test
-                        '''
+                        """
                     }
                 }
             }
@@ -115,16 +107,14 @@ pipeline {
         stage('Package & Upload Flask App') {
             steps {
                 withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
-                    sh '''
+                    sh """
                         set -e
-                        echo "Packaging Flask app..."
-                        cd "${FLASK_DIR}"
-                        ARTIFACT="flask-app-${BUILD_TAG}.tar.gz"
-                        tar -czf "../$ARTIFACT" .
-                        ls -lh "../$ARTIFACT"
+                        cd ${FLASK_DIR}
+                        ARTIFACT="../flask-app-${BUILD_TAG}.tar.gz"
+                        tar -czf \$ARTIFACT .
                         echo "Uploading Flask artifact to S3..."
-                        aws s3 cp "../$ARTIFACT" "s3://${S3_BUCKET}/flask/" --region "${AWS_REGION}"
-                    '''
+                        aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
+                    """
                 }
             }
         }
@@ -132,62 +122,58 @@ pipeline {
         stage('Package & Upload Node.js App') {
             steps {
                 withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
-                    sh '''
+                    sh """
                         set -e
-                        echo "Packaging Node.js app..."
-                        cd "${NODE_DIR}"
-                        ARTIFACT="node-app-${BUILD_TAG}.tar.gz"
-                        tar -czf "../$ARTIFACT" .
-                        ls -lh "../$ARTIFACT"
+                        cd ${NODE_DIR}
+                        ARTIFACT="../node-app-${BUILD_TAG}.tar.gz"
+                        tar -czf \$ARTIFACT .
                         echo "Uploading Node.js artifact to S3..."
-                        aws s3 cp "../$ARTIFACT" "s3://${S3_BUCKET}/node/" --region "${AWS_REGION}"
-                    '''
+                        aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
+                    """
                 }
             }
         }
 
         stage('Deploy with Ansible') {
             steps {
-                sh '''
-                    set -e
-                    export ANSIBLE_HOST_KEY_CHECKING=False
-                    ansible-playbook -i ansible/inventory.ini ansible/site.yaml -e "BUILD_NUMBER=${BUILD_TAG}"
-                '''
+                withCredentials([string(credentialsId: "${VAULT_CRED}", variable: 'VAULT_PASS')]) {
+                    sh """
+                        set -e
+                        export ANSIBLE_HOST_KEY_CHECKING=False
+                        echo "\$VAULT_PASS" > /tmp/.vault_pass.txt
+                        ansible-playbook -i ansible/inventory.ini ansible/site.yaml --vault-password-file /tmp/.vault_pass.txt -e "BUILD_NUMBER=${BUILD_TAG}"
+                        rm -f /tmp/.vault_pass.txt
+                    """
+                }
             }
         }
 
         stage('Cleanup Old Artifacts') {
             steps {
                 withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
-                    sh '''
+                    sh """
                         set -e
                         for folder in flask node; do
-                            echo "Checking old artifacts in s3://${S3_BUCKET}/$folder/"
-                            aws s3 ls "s3://${S3_BUCKET}/$folder/" --recursive | sort | head -n -5 | awk '{print $4}' | while read f; do
-                                if [ -n "$f" ]; then
-                                    echo "Deleting old artifact: $f"
-                                    aws s3 rm "s3://${S3_BUCKET}/$f" --region "${AWS_REGION}"
+                            aws s3 ls s3://${S3_BUCKET}/\$folder/ --recursive | sort | head -n -5 | awk '{print \$4}' | while read f; do
+                                if [ -n "\$f" ]; then
+                                    echo "Deleting old artifact: \$f"
+                                    aws s3 rm s3://${S3_BUCKET}/\$f --region ${AWS_REGION}
                                 fi
                             done
                         done
-                    '''
+                    """
                 }
             }
         }
     }
 
     post {
-        always {
-            cleanWs()
-        }
-        success {
-            echo "Pipeline completed successfully!"
-        }
-        failure {
-            echo "Pipeline failed. Check logs for details."
-        }
+        always { cleanWs() }
+        success { echo "Pipeline completed successfully!" }
+        failure { echo "Pipeline failed. Check logs for details." }
     }
 }
+
 
 
 

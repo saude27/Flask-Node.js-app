@@ -1,8 +1,10 @@
-- name: Install Python3 and pip
+---
+- name: Ensure Python3, pip, and virtualenv are installed
   yum:
     name:
       - python3
       - python3-pip
+      - python3-virtualenv
     state: present
 
 - name: Ensure boto3 and botocore are installed
@@ -12,7 +14,6 @@
       - botocore
     state: present
     executable: pip3
-
 
 - name: Set Flask artifact filename
   ansible.builtin.set_fact:
@@ -30,8 +31,8 @@
   ansible.builtin.file:
     path: /opt/flask-app
     state: directory
-    owner: "{{ ansible_user | default('ec2-user') }}"
-    group: "{{ ansible_user | default('ec2-user') }}"
+    owner: ec2-user
+    group: ec2-user
     mode: '0755'
 
 - name: Extract Flask artifact
@@ -40,14 +41,31 @@
     dest: /opt/flask-app
     remote_src: yes
 
+- name: Create virtual environment
+  ansible.builtin.command:
+    cmd: python3 -m venv /opt/flask-app/venv
+    creates: /opt/flask-app/venv/bin/activate
 
-
-- name: Install Flask dependencies
-  pip:
+- name: Install Flask dependencies in virtualenv
+  ansible.builtin.pip:
     requirements: /opt/flask-app/requirements.txt
+    virtualenv: /opt/flask-app/venv
+    virtualenv_python: python3
 
-- name: Start Flask app with systemd
-  copy:
+- name: Create .env file with DB credentials
+  ansible.builtin.copy:
+    dest: /opt/flask-app/.env
+    content: |
+      DB_HOST=localhost
+      DB_NAME={{ db_name }}
+      DB_USER={{ db_user }}
+      DB_PASSWORD={{ db_password }}
+    owner: ec2-user
+    group: ec2-user
+    mode: '0600'
+
+- name: Create systemd service for Flask
+  ansible.builtin.copy:
     dest: /etc/systemd/system/flask.service
     content: |
       [Unit]
@@ -55,16 +73,26 @@
       After=network.target
 
       [Service]
-      ExecStart=/usr/bin/python3 /opt/flask-app/app.py
+      User=ec2-user
+      Group=ec2-user
       WorkingDirectory=/opt/flask-app
+      ExecStart=/opt/flask-app/venv/bin/python /opt/flask-app/app.py
       Restart=always
-      Environment=DB_HOST=localhost DB_NAME={{ db_name }} DB_USER={{ db_user }} DB_PASS={{ db_password }}
+      EnvironmentFile=/opt/flask-app/.env
 
       [Install]
       WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
 
 - name: Enable and start Flask service
-  systemd:
+  ansible.builtin.systemd:
     name: flask
     state: started
     enabled: yes
+

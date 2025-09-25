@@ -1,8 +1,14 @@
+- name: Add NodeSource repo for Node.js 20
+  ansible.builtin.shell: |
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+  args:
+    warn: false
+
 - name: Install Node.js
   yum:
     name: nodejs
     state: present
-    
+
 - name: Set Node.js artifact filename
   ansible.builtin.set_fact:
     node_artifact: "node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
@@ -10,8 +16,8 @@
 - name: Download Node.js artifact from S3
   amazon.aws.aws_s3:
     bucket: dual-app-artifacts
-    object: "node/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
-    dest: "/tmp/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+    object: "node/{{ node_artifact }}"
+    dest: "/tmp/{{ node_artifact }}"
     mode: get
     region: eu-west-2
 
@@ -19,24 +25,35 @@
   ansible.builtin.file:
     path: /opt/node-app
     state: directory
-    owner: "{{ ansible_user | default('ec2-user') }}"
-    group: "{{ ansible_user | default('ec2-user') }}"
+    owner: ec2-user
+    group: ec2-user
     mode: '0755'
 
 - name: Extract Node.js artifact
   ansible.builtin.unarchive:
-    src: "/tmp/node-app-{{ lookup('env','BUILD_NUMBER') }}.tar.gz"
+    src: "/tmp/{{ node_artifact }}"
     dest: /opt/node-app
     remote_src: yes
-
 
 - name: Install Node.js dependencies
   command: npm install
   args:
     chdir: /opt/node-app
 
-- name: Start Node.js app with systemd
-  copy:
+- name: Create .env file for Node.js
+  ansible.builtin.copy:
+    dest: /opt/node-app/.env
+    content: |
+      DB_HOST=localhost
+      DB_NAME={{ db_name }}
+      DB_USER={{ db_user }}
+      DB_PASSWORD={{ db_password }}
+    owner: ec2-user
+    group: ec2-user
+    mode: '0600'
+
+- name: Create systemd service for Node.js
+  ansible.builtin.copy:
     dest: /etc/systemd/system/node.service
     content: |
       [Unit]
@@ -44,16 +61,25 @@
       After=network.target
 
       [Service]
-      ExecStart=/usr/bin/node /opt/node-app/server.js
+      User=ec2-user
+      Group=ec2-user
       WorkingDirectory=/opt/node-app
+      ExecStart=/usr/bin/node /opt/node-app/server.js
       Restart=always
-      Environment=DB_HOST=localhost DB_NAME={{ db_name }} DB_USER={{ db_user }} DB_PASS={{ db_password }}
+      EnvironmentFile=/opt/node-app/.env
 
       [Install]
       WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
 
 - name: Enable and start Node service
-  systemd:
+  ansible.builtin.systemd:
     name: node
     state: started
     enabled: yes
