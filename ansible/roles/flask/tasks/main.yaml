@@ -46,18 +46,25 @@
     dest: /opt/flask-app
     remote_src: yes
 
-- name: Create Python virtualenv
+- name: Create Python virtualenv (with pip)
   ansible.builtin.command:
-    cmd: python3 -m venv /opt/flask-app/venv
+    cmd: python3 -m venv --without-pip /opt/flask-app/venv
     creates: /opt/flask-app/venv
+  become: yes
+  become_user: ec2-user
+
+- name: Bootstrap pip in virtualenv
+  ansible.builtin.command:
+    cmd: /opt/flask-app/venv/bin/python -m ensurepip
   become: yes
   become_user: ec2-user
 
 - name: Upgrade pip in virtualenv
   ansible.builtin.command:
-    cmd: /opt/flask-app/venv/bin/pip install --upgrade pip
+    cmd: /opt/flask-app/venv/bin/python -m pip install --upgrade pip
   become: yes
   become_user: ec2-user
+
 
 - name: Install Flask dependencies in virtualenv
   ansible.builtin.pip:
