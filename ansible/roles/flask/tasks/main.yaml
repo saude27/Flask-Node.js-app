@@ -1,5 +1,4 @@
 ---
----
 - name: Ensure Flask app directory exists
   ansible.builtin.file:
     path: /opt/flask-app
