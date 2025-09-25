@@ -6,8 +6,8 @@
     flask_port: 5000
     node_port: 3000
     db_name: shared_db
-    db_user: "{{ db_user }}"
-    db_password: "{{ db_password }}"
+    db_user: "{{ vault_db_user }}"
+    db_password: "{{ vault_db_password }}"
 
   roles:
     - postgres
