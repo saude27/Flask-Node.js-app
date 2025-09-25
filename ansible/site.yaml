@@ -1,13 +1,15 @@
 - hosts: web
   become: yes
+
   vars_files:
     - vault.yaml
+
   vars:
-    flask_port: 5000
-    node_port: 3000
     db_name: shared_db
     db_user: "{{ vault_db_user }}"
     db_password: "{{ vault_db_password }}"
+    flask_port: 5000
+    node_port: 3000
 
   roles:
     - postgres
