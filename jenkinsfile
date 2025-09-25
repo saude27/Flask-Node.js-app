@@ -19,34 +19,33 @@ pipeline {
         stage('Prepare Agent') {
             steps {
                 sh '''
-                    bash -c "
                     set -e
-                    echo 'Detecting OS...'
+                    echo "Detecting OS..."
                     if [ -f /etc/os-release ]; then
                         . /etc/os-release
-                        OS_ID=\"$ID\"
-                        OS_VERSION=\"$VERSION_ID\"
+                        OS_ID="${ID:-unknown}"
+                        OS_VERSION="${VERSION_ID:-unknown}"
                     else
-                        echo 'Cannot detect OS, exiting.'
-                        exit 1
+                        OS_ID=$(uname -s | tr '[:upper:]' '[:lower:]')
+                        OS_VERSION=$(uname -r)
                     fi
-                    echo 'Detected OS: '$OS_ID $OS_VERSION
+                    echo "Detected OS: $OS_ID $OS_VERSION"
 
-                    if [ \"$OS_ID\" = \"ubuntu\" ] || [ \"$OS_ID\" = \"debian\" ]; then
-                        echo 'Installing dependencies on Ubuntu/Debian...'
+                    if [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "debian" ]; then
+                        echo "Installing dependencies on Ubuntu/Debian..."
                         sudo apt update -y
                         sudo apt install -y python3 python3-venv python3-pip curl
                         curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
                         sudo apt install -y nodejs
 
-                    elif [ \"$OS_ID\" = \"amzn\" ] || [ \"$OS_ID\" = \"rhel\" ] || [ \"$OS_ID\" = \"centos\" ]; then
-                        echo 'Installing dependencies on Amazon Linux / RHEL...'
+                    elif [ "$OS_ID" = "amzn" ] || [ "$OS_ID" = "rhel" ] || [ "$OS_ID" = "centos" ]; then
+                        echo "Installing dependencies on Amazon Linux / RHEL..."
                         sudo yum install -y python3 python3-pip python3-virtualenv curl
                         curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
                         sudo yum install -y nodejs
 
                     else
-                        echo 'Unsupported OS: '$OS_ID
+                        echo "Unsupported OS: $OS_ID"
                         exit 1
                     fi
 
@@ -54,7 +53,6 @@ pipeline {
                     pip3 --version
                     node -v
                     npm -v
-                    "
                 '''
             }
         }
@@ -64,14 +62,20 @@ pipeline {
                 script {
                     env.FLASK_DIR = sh(script: '''
                         for d in */ ; do
-                            [ -f "$d/requirements.txt" ] && echo $d && break
+                            if [ -f "$d/requirements.txt" ]; then
+                                echo $d
+                                break
+                            fi
                         done
                     ''', returnStdout: true).trim()
                     if (!env.FLASK_DIR) { error "Flask app folder not found!" }
 
                     env.NODE_DIR = sh(script: '''
                         for d in */ ; do
-                            [ -f "$d/package.json" ] && echo $d && break
+                            if [ -f "$d/package.json" ]; then
+                                echo $d
+                                break
+                            fi
                         done
                     ''', returnStdout: true).trim()
                     if (!env.NODE_DIR) { error "Node.js app folder not found!" }
@@ -87,16 +91,13 @@ pipeline {
                 stage('Build Flask App') {
                     steps {
                         sh '''
-                            bash -c "
                             set -e
-                            echo 'Building Flask app...'
-                            cd ${FLASK_DIR}
+                            echo "Building Flask app..."
+                            cd "${FLASK_DIR}"
                             python3 -m venv venv
                             source venv/bin/activate
                             pip install -r requirements.txt
-                            # Optional: run tests
-                            # pytest tests/
-                            "
+                            # pytest tests/   # optional tests
                         '''
                     }
                 }
@@ -104,14 +105,11 @@ pipeline {
                 stage('Build Node.js App') {
                     steps {
                         sh '''
-                            bash -c "
                             set -e
-                            echo 'Building Node.js app...'
-                            cd ${NODE_DIR}
+                            echo "Building Node.js app..."
+                            cd "${NODE_DIR}"
                             npm install
-                            # Optional: run tests
-                            # npm test
-                            "
+                            # npm test   # optional tests
                         '''
                     }
                 }
@@ -122,16 +120,14 @@ pipeline {
             steps {
                 withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
                     sh '''
-                        bash -c "
                         set -e
-                        echo 'Packaging Flask app...'
-                        cd ${FLASK_DIR}
-                        ARTIFACT=flask-app-${BUILD_TAG}.tar.gz
-                        tar -czf $ARTIFACT .
-                        ls -lh $ARTIFACT
-                        echo 'Uploading Flask artifact to S3...'
-                        aws s3 cp $ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
-                        "
+                        echo "Packaging Flask app..."
+                        cd "${FLASK_DIR}"
+                        ARTIFACT="flask-app-${BUILD_TAG}.tar.gz"
+                        tar -czf "$ARTIFACT" .
+                        ls -lh "$ARTIFACT"
+                        echo "Uploading Flask artifact to S3..."
+                        aws s3 cp "$ARTIFACT" "s3://${S3_BUCKET}/flask/" --region "${AWS_REGION}"
                     '''
                 }
             }
@@ -141,16 +137,14 @@ pipeline {
             steps {
                 withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
                     sh '''
-                        bash -c "
                         set -e
-                        echo 'Packaging Node.js app...'
-                        cd ${NODE_DIR}
-                        ARTIFACT=node-app-${BUILD_TAG}.tar.gz
-                        tar -czf $ARTIFACT .
-                        ls -lh $ARTIFACT
-                        echo 'Uploading Node.js artifact to S3...'
-                        aws s3 cp $ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
-                        "
+                        echo "Packaging Node.js app..."
+                        cd "${NODE_DIR}"
+                        ARTIFACT="node-app-${BUILD_TAG}.tar.gz"
+                        tar -czf "$ARTIFACT" .
+                        ls -lh "$ARTIFACT"
+                        echo "Uploading Node.js artifact to S3..."
+                        aws s3 cp "$ARTIFACT" "s3://${S3_BUCKET}/node/" --region "${AWS_REGION}"
                     '''
                 }
             }
@@ -159,11 +153,9 @@ pipeline {
         stage('Deploy with Ansible') {
             steps {
                 sh '''
-                    bash -c "
                     set -e
                     export ANSIBLE_HOST_KEY_CHECKING=False
-                    ansible-playbook -i ansible/inventory.ini ansible/site.yaml -e 'BUILD_NUMBER=${BUILD_TAG}'
-                    "
+                    ansible-playbook -i ansible/inventory.ini ansible/site.yaml -e "BUILD_NUMBER=${BUILD_TAG}"
                 '''
             }
         }
@@ -172,19 +164,17 @@ pipeline {
             steps {
                 withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
                     sh '''
-                        bash -c "
                         set -e
                         for folder in flask node; do
-                            files=($(aws s3 ls s3://${S3_BUCKET}/$folder/ --recursive | sort | awk '{print $4}'))
+                            files=($(aws s3 ls "s3://${S3_BUCKET}/$folder/" --recursive | sort | awk '{print $4}'))
                             total=${#files[@]}
-                            if [ $total -gt 5 ]; then
-                                for f in \"${files[@]:0:total-5}\"; do
-                                    echo 'Deleting old artifact: '$f
-                                    aws s3 rm s3://${S3_BUCKET}/$f --region ${AWS_REGION}
+                            if [ "$total" -gt 5 ]; then
+                                for f in "${files[@]:0:total-5}"; do
+                                    echo "Deleting old artifact: $f"
+                                    aws s3 rm "s3://${S3_BUCKET}/$f" --region "${AWS_REGION}"
                                 done
                             fi
                         done
-                        "
                     '''
                 }
             }
@@ -203,6 +193,7 @@ pipeline {
         }
     }
 }
+
 
 
 
