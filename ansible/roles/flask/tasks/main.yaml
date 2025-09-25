@@ -1,4 +1,5 @@
 ---
+---
 - name: Ensure Flask app directory exists
   ansible.builtin.file:
     path: /opt/flask-app
@@ -9,16 +10,17 @@
   become: yes
 
 # Install Python, pip, and virtualenv depending on OS
-- name: Ensure Python3 & pip are installed
+- name: Ensure Python3 & pip are installed on RedHat
   yum:
-    name: 
+    name:
       - python3
       - python3-pip
+      - python3-virtualenv
     state: present
   when: ansible_os_family == "RedHat"
   become: yes
 
-- name: Install Python and dependencies on Debian/Ubuntu
+- name: Ensure Python3 & pip are installed on Debian/Ubuntu
   apt:
     name:
       - python3
@@ -53,7 +55,7 @@
   become: yes
   become_user: ec2-user
 
-# Create Python virtualenv without pip
+# Create Python virtualenv with pip
 - name: Create Python virtualenv
   ansible.builtin.command:
     cmd: python3 -m venv /opt/flask-app/venv
@@ -61,21 +63,12 @@
   become: yes
   become_user: ec2-user
 
-
-# Bootstrap pip in the venv
-- name: Bootstrap pip in virtualenv
+# Ensure pip is installed and upgraded in venv
+- name: Ensure pip in virtualenv
   ansible.builtin.command:
-    cmd: /opt/flask-app/venv/bin/python -m ensurepip
+    cmd: /opt/flask-app/venv/bin/python -m pip install --upgrade pip setuptools wheel
   become: yes
   become_user: ec2-user
-
-# Upgrade pip to latest
-- name: Upgrade pip in virtualenv
-  ansible.builtin.command:
-    cmd: /opt/flask-app/venv/bin/python -m pip install --upgrade pip
-  become: yes
-  become_user: ec2-user
-
 
 # Check if requirements.txt exists
 - name: Check if requirements.txt exists
@@ -83,7 +76,7 @@
     path: /opt/flask-app/requirements.txt
   register: requirements_file
   become: yes
-  become_user: ec2-user  
+  become_user: ec2-user
 
 # Install Flask dependencies in virtualenv
 - name: Install Flask dependencies in virtualenv
