@@ -1,6 +1,7 @@
 ---
 - name: Add NodeSource repo for Node.js 20
-  ansible.builtin.shell: curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+  ansible.builtin.shell: |
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
   args:
     warn: false
   become: yes
