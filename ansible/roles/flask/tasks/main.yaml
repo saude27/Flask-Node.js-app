@@ -78,14 +78,11 @@
   become_user: ec2-user
 
 # Install Flask dependencies in virtualenv
-- name: Install Flask dependencies in virtualenv
-  ansible.builtin.pip:
-    requirements: /opt/flask-app/requirements.txt
-    virtualenv: /opt/flask-app/venv
-    virtualenv_python: python3
+- name: Install Flask dependencies using pip
+  ansible.builtin.command:
+    cmd: /opt/flask-app/venv/bin/python -m pip install -r /opt/flask-app/requirements.txt
   become: yes
   become_user: ec2-user
-  when: requirements_file.stat.exists
 
 # Create environment file for Flask
 - name: Create .env file for Flask
