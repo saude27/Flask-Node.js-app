@@ -1,13 +1,16 @@
+---
 - name: Add NodeSource repo for Node.js 20
   ansible.builtin.shell: |
     curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
   args:
     warn: false
+  become: yes
 
 - name: Install Node.js
   yum:
     name: nodejs
     state: present
+  become: yes
 
 - name: Set Node.js artifact filename
   ansible.builtin.set_fact:
@@ -36,9 +39,11 @@
     remote_src: yes
 
 - name: Install Node.js dependencies
-  command: npm install
-  args:
+  ansible.builtin.command:
+    cmd: npm install
     chdir: /opt/node-app
+  become: yes
+  become_user: ec2-user
 
 - name: Create .env file for Node.js
   ansible.builtin.copy:
@@ -73,13 +78,17 @@
     owner: root
     group: root
     mode: '0644'
+  become: yes
 
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: yes
+  become: yes
 
 - name: Enable and start Node service
   ansible.builtin.systemd:
     name: node
     state: started
     enabled: yes
+  become: yes
+
