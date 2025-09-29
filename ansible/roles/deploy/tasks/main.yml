@@ -19,7 +19,7 @@
 
 - name: Extract Flask artifact
   unarchive:
-    src: /opt/apps/flask-app.tar.gz
+    src: /opt/flask-app.tar.gz
     dest: /opt/flask-app
     remote_src: yes
   notify: Restart Flask app
