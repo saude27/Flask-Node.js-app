@@ -1,4 +1,8 @@
 ---
+- name: Reload systemd
+  systemd:
+    daemon_reload: yes
+
 - name: Restart Flask app
   systemd:
     name: flask-app
@@ -10,3 +14,4 @@
     name: node-app
     state: restarted
     enabled: yes
+

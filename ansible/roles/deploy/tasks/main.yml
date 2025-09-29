@@ -1,12 +1,12 @@
 ---
 - name: Ensure app directories exist
   file:
-    path: "/opt/flask-app"
+    path: "{{ item }}"
     state: directory
     mode: '0755'
   loop:
-    - flask
-    - node
+    - /opt/flask-app
+    - /opt/node-app
 
 - name: Download Flask artifact from S3
   amazon.aws.aws_s3:
@@ -24,6 +24,24 @@
     remote_src: yes
   notify: Restart Flask app
 
+- name: Ensure Flask systemd service exists
+  copy:
+    dest: /etc/systemd/system/flask-app.service
+    content: |
+      [Unit]
+      Description=Flask App
+      After=network.target
+
+      [Service]
+      User=ubuntu
+      WorkingDirectory=/opt/flask-app
+      ExecStart=/usr/bin/python3 app.py
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Reload systemd
+
 - name: Download Node.js artifact from S3
   amazon.aws.aws_s3:
     bucket: dual-app-artifacts
@@ -39,3 +57,22 @@
     dest: /opt/node-app
     remote_src: yes
   notify: Restart Node.js app
+
+- name: Ensure Node.js systemd service exists
+  copy:
+    dest: /etc/systemd/system/node-app.service
+    content: |
+      [Unit]
+      Description=Node App
+      After=network.target
+
+      [Service]
+      User=ubuntu
+      WorkingDirectory=/opt/node-app
+      ExecStart=/usr/bin/npm start
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Reload systemd
+
