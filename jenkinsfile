@@ -6,7 +6,6 @@ pipeline {
         BUILD_TAG   = "${env.BUILD_NUMBER}"
         AWS_CREDS   = 'aws-creds-id'
         AWS_REGION  = 'eu-west-2'
-        VAULT_CRED  = 'ansible-vault-pass' // Jenkins credential ID for vault password
     }
 
     stages {
@@ -136,15 +135,11 @@ pipeline {
 
         stage('Deploy with Ansible') {
             steps {
-                withCredentials([string(credentialsId: "${VAULT_CRED}", variable: 'VAULT_PASS')]) {
-                    sh """
-                        set -e
-                        export ANSIBLE_HOST_KEY_CHECKING=False
-                        echo "\$VAULT_PASS" > /tmp/.vault_pass.txt
-                        ansible-playbook -i ansible/inventory.ini ansible/site.yaml --vault-password-file /tmp/.vault_pass.txt -e "BUILD_NUMBER=${BUILD_TAG}"
-                        rm -f /tmp/.vault_pass.txt
-                    """
-                }
+                sh """
+                    set -e
+                    export ANSIBLE_HOST_KEY_CHECKING=False
+                    ansible-playbook -i ansible/inventory.ini ansible/site.yaml -e "BUILD_NUMBER=${BUILD_TAG}"
+                """
             }
         }
 
