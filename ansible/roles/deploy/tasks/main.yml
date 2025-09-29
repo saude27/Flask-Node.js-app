@@ -33,7 +33,7 @@
       After=network.target
 
       [Service]
-      User=ubuntu
+      User=ec2-user
       WorkingDirectory=/opt/flask-app
       ExecStart=/usr/bin/python3 app.py
       Restart=always
@@ -67,7 +67,7 @@
       After=network.target
 
       [Service]
-      User=ubuntu
+      User=ec2-user
       WorkingDirectory=/opt/node-app
       ExecStart=/usr/bin/npm start
       Restart=always
