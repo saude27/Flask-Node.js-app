@@ -35,7 +35,8 @@
       [Service]
       User=ec2-user
       WorkingDirectory=/opt/flask-app
-      ExecStart=/usr/bin/python3 app.py
+      ExecStart=ExecStart=/opt/flask-app/venv/bin/python /opt/flask-app/app.py
+
       Restart=always
 
       [Install]
