@@ -1,0 +1,41 @@
+---
+- name: Ensure app directories exist
+  file:
+    path: "/opt/flask-app"
+    state: directory
+    mode: '0755'
+  loop:
+    - flask
+    - node
+
+- name: Download Flask artifact from S3
+  amazon.aws.aws_s3:
+    bucket: dual-app-artifacts
+    object: "flask/flask-app-{{ BUILD_NUMBER }}.tar.gz"
+    dest: /opt/flask-app.tar.gz
+    mode: get
+    region: eu-west-2
+  notify: Restart Flask app
+
+- name: Extract Flask artifact
+  unarchive:
+    src: /opt/apps/flask-app.tar.gz
+    dest: /opt/flask-app
+    remote_src: yes
+  notify: Restart Flask app
+
+- name: Download Node.js artifact from S3
+  amazon.aws.aws_s3:
+    bucket: dual-app-artifacts
+    object: "node/node-app-{{ BUILD_NUMBER }}.tar.gz"
+    dest: /opt/node-app.tar.gz
+    mode: get
+    region: eu-west-2
+  notify: Restart Node.js app
+
+- name: Extract Node.js artifact
+  unarchive:
+    src: /opt/node-app.tar.gz
+    dest: /opt/node-app
+    remote_src: yes
+  notify: Restart Node.js app
