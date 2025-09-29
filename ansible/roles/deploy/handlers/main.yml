@@ -1,0 +1,12 @@
+---
+- name: Restart Flask app
+  systemd:
+    name: flask-app
+    state: restarted
+    enabled: yes
+
+- name: Restart Node.js app
+  systemd:
+    name: node-app
+    state: restarted
+    enabled: yes
