@@ -39,10 +39,6 @@ pipeline {
                             exit 1
                             ;;
                     esac
-                    python3 --version
-                    pip3 --version
-                    node -v
-                    npm -v
                 '''
             }
         }
@@ -68,8 +64,7 @@ pipeline {
             }
         }
 
-        // ===== Build Stage =====
-        stage('Build Stage') {
+        stage('Build Apps') {
             parallel {
                 stage('Build Flask App') {
                     steps {
@@ -95,16 +90,19 @@ pipeline {
             }
         }
 
-        // ===== Package & Upload Stage =====
-        stage('Package & Upload') {
+        stage('Package, Extract & Upload to S3') {
             parallel {
                 stage('Flask App') {
                     steps {
                         withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
                             sh """
+                                set -e
                                 cd ${FLASK_DIR}
                                 ARTIFACT="../flask-app-${BUILD_TAG}.tar.gz"
                                 tar -czf \$ARTIFACT .
+                                mkdir -p build/flask
+                                tar -xzf \$ARTIFACT -C build/flask
+                                echo "Uploading Flask artifact to S3..."
                                 aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
                             """
                         }
@@ -114,9 +112,13 @@ pipeline {
                     steps {
                         withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
                             sh """
+                                set -e
                                 cd ${NODE_DIR}
                                 ARTIFACT="../node-app-${BUILD_TAG}.tar.gz"
                                 tar -czf \$ARTIFACT .
+                                mkdir -p build/node
+                                tar -xzf \$ARTIFACT -C build/node
+                                echo "Uploading Node.js artifact to S3..."
                                 aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
                             """
                         }
@@ -156,6 +158,7 @@ pipeline {
         failure { echo "Pipeline failed. Check logs for details." }
     }
 }
+
 
 
 
