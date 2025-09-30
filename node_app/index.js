@@ -4,9 +4,9 @@ const app = express();
 
 const pool = new Pool({
   host: 'localhost',
-  user: 'devops',
-  password: 'password',
-  database: 'sharedappdb'
+  user: 'db_user',
+  password: 'db_password',
+  database: 'shared_db'
 });
 
 app.get('/', async (req, res) => {
