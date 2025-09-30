@@ -1,17 +1,11 @@
 pipeline {
     agent { label 'ubuntu-agent' }
 
-    parameters {
-        string(name: 'FLASK_VERSION', defaultValue: '1.0.0', description: 'Flask app version')
-        string(name: 'NODE_VERSION', defaultValue: '1.0.0', description: 'Node.js app version')
-        choice(name: 'APP_TYPE', choices: ['flask', 'node', 'both'], description: 'App(s) to build')
-    }
-
     environment {
-        S3_BUCKET = "dual-app-artifacts"
-        AWS_REGION = "eu-west-2"
-        AWS_CREDS = 'aws-creds-id'
-        BUILD_TIMESTAMP = "${new Date().format('yyyyMMdd-HHmmss')}"
+        S3_BUCKET   = "dual-app-artifacts"
+        BUILD_TAG   = "${env.BUILD_NUMBER}"
+        AWS_CREDS   = 'aws-creds-id'
+        AWS_REGION  = 'eu-west-2'
     }
 
     stages {
@@ -27,76 +21,118 @@ pipeline {
                 sh '''
                     set -e
                     echo "Installing required tools..."
-                    sudo apt update -y
-                    sudo apt install -y python3 python3-venv python3-pip nodejs npm awscli
+                    if [ -f /etc/os-release ]; then . /etc/os-release; fi
+                    case "$ID" in
+                        ubuntu|debian)
+                            sudo apt update -y
+                            sudo apt install -y python3 python3-venv python3-pip nodejs npm unzip curl
+                            # Install AWS CLI v2
+                            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                            unzip awscliv2.zip
+                            sudo ./aws/install
+                            ;;
+                        amzn|rhel|centos)
+                            sudo yum install -y python3 python3-pip python3-virtualenv curl unzip
+                            curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+                            sudo yum install -y nodejs
+                            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                            unzip awscliv2.zip
+                            sudo ./aws/install
+                            ;;
+                        *)
+                            echo "Unsupported OS: $ID"
+                            exit 1
+                            ;;
+                    esac
+
+                    python3 --version
+                    pip3 --version
+                    node -v
+                    npm -v
+                    aws --version
                 '''
+            }
+        }
+
+        stage('Detect App Folders') {
+            steps {
+                script {
+                    env.FLASK_DIR = sh(script: '''
+                        for d in */ ; do
+                            [ -f "$d/requirements.txt" ] && echo $d && break
+                        done
+                    ''', returnStdout: true).trim()
+                    env.NODE_DIR = sh(script: '''
+                        for d in */ ; do
+                            [ -f "$d/package.json" ] && echo $d && break
+                        done
+                    ''', returnStdout: true).trim()
+
+                    if (!env.FLASK_DIR || !env.NODE_DIR) { error "Flask or Node.js app folder not found!" }
+                    echo "Detected Flask folder: ${env.FLASK_DIR}"
+                    echo "Detected Node.js folder: ${env.NODE_DIR}"
+                }
             }
         }
 
         stage('Build Apps') {
             parallel {
                 stage('Build Flask App') {
-                    when { expression { params.APP_TYPE == 'flask' || params.APP_TYPE == 'both' } }
                     steps {
                         sh """
-                            echo "🏗️ Building Flask app v${params.FLASK_VERSION}"
-                            [ -d "apps/flask-app" ] || { echo "Flask app directory not found"; exit 1; }
-                            python3 -m venv apps/flask-app/venv
-                            . apps/flask-app/venv/bin/activate
+                            set -e
+                            cd ${FLASK_DIR}
+                            python3 -m venv venv
+                            . venv/bin/activate
                             pip install --upgrade pip
-                            pip install -r apps/flask-app/requirements.txt
-                            mkdir -p artifacts
-                            tar -czf artifacts/flask-app-${params.FLASK_VERSION}.tar.gz -C apps/flask-app .
-                            echo "✅ Flask artifact created: artifacts/flask-app-${params.FLASK_VERSION}.tar.gz"
+                            pip install -r requirements.txt
                         """
                     }
                 }
-
                 stage('Build Node.js App') {
-                    when { expression { params.APP_TYPE == 'node' || params.APP_TYPE == 'both' } }
                     steps {
                         sh """
-                            echo "🏗️ Building Node.js app v${params.NODE_VERSION}"
-                            [ -d "apps/node-app" ] || { echo "Node.js app directory not found"; exit 1; }
-                            cd apps/node-app
+                            set -e
+                            cd ${NODE_DIR}
                             npm install
-                            cd ../../
-                            mkdir -p artifacts
-                            tar -czf artifacts/node-app-${params.NODE_VERSION}.tar.gz -C apps/node-app .
-                            echo "✅ Node.js artifact created: artifacts/node-app-${params.NODE_VERSION}.tar.gz"
                         """
                     }
                 }
             }
         }
 
-        stage('Upload Artifacts to S3') {
-            steps {
-                script {
-                    echo "📤 Uploading artifacts to S3..."
-                    def s3BasePath = "deployments/${env.JOB_NAME}/${env.BUILD_NUMBER}_${env.BUILD_TIMESTAMP}"
-
-                    // Ensure bucket exists
-                    sh "aws s3 mb s3://${env.S3_BUCKET} || echo 'Bucket already exists or creation failed'"
-
-                    if (fileExists("artifacts/flask-app-${params.FLASK_VERSION}.tar.gz")) {
-                        sh """
-                            echo "Uploading Flask artifact..."
-                            aws s3 cp artifacts/flask-app-${params.FLASK_VERSION}.tar.gz \
-                                s3://${env.S3_BUCKET}/${s3BasePath}/flask-app-${params.FLASK_VERSION}.tar.gz \
-                                --metadata version=${params.FLASK_VERSION},build=${env.BUILD_NUMBER},timestamp=${env.BUILD_TIMESTAMP}
-                            echo "✅ Flask artifact uploaded"
-                        """
+        stage('Package, Extract & Upload to S3') {
+            parallel {
+                stage('Flask App') {
+                    steps {
+                        withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
+                            sh """
+                                set -e
+                                cd ${FLASK_DIR}
+                                ARTIFACT="../flask-app-${BUILD_TAG}.tar.gz"
+                                tar -czf \$ARTIFACT .
+                                mkdir -p build/flask
+                                tar -xzf \$ARTIFACT -C build/flask
+                                echo "Uploading Flask artifact to S3..."
+                                aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/flask/ --region ${AWS_REGION}
+                            """
+                        }
                     }
-
-                    if (fileExists("artifacts/node-app-${params.NODE_VERSION}.tar.gz")) {
-                        sh """
-                            echo "Uploading Node.js artifact..."
-                            aws s3 cp artifacts/node-app-${params.NODE_VERSION}.tar.gz \
-                                s3://${env.S3_BUCKET}/${s3BasePath}/node-app-${params.NODE_VERSION}.tar.gz \
-                                --metadata version=${params.NODE_VERSION},build=${env.BUILD_NUMBER},timestamp=${env.BUILD_TIMESTAMP}
-                            echo "✅ Node.js artifact uploaded"
-                        """
+                }
+                stage('Node.js App') {
+                    steps {
+                        withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
+                            sh """
+                                set -e
+                                cd ${NODE_DIR}
+                                ARTIFACT="../node-app-${BUILD_TAG}.tar.gz"
+                                tar -czf \$ARTIFACT .
+                                mkdir -p build/node
+                                tar -xzf \$ARTIFACT -C build/node
+                                echo "Uploading Node.js artifact to S3..."
+                                aws s3 cp \$ARTIFACT s3://${S3_BUCKET}/node/ --region ${AWS_REGION}
+                            """
+                        }
                     }
                 }
             }
@@ -107,23 +143,21 @@ pipeline {
                 sh """
                     set -e
                     export ANSIBLE_HOST_KEY_CHECKING=False
-                    ansible-playbook -i ansible/inventory.ini ansible/site.yaml -e "BUILD_NUMBER=${env.BUILD_NUMBER}"
+                    ansible-playbook -i ansible/inventory.ini ansible/site.yaml -e "BUILD_NUMBER=${BUILD_TAG}"
                 """
             }
         }
 
         stage('Cleanup Old Artifacts') {
             steps {
-                script {
-                    echo "🧹 Cleaning up old artifacts in S3..."
-                    def folders = ['flask', 'node']
-                    folders.each { folder ->
-                        sh """
-                            aws s3 ls s3://${env.S3_BUCKET}/${folder}/ --recursive | sort | head -n -5 | awk '{print \$4}' | while read f; do
-                                [ -n "\$f" ] && aws s3 rm s3://${env.S3_BUCKET}/\$f --region ${AWS_REGION}
+                withAWS(region: "${AWS_REGION}", credentials: "${AWS_CREDS}") {
+                    sh """
+                        for folder in flask node; do
+                            aws s3 ls s3://${S3_BUCKET}/\$folder/ --recursive | sort | head -n -5 | awk '{print \$4}' | while read f; do
+                                [ -n "\$f" ] && aws s3 rm s3://${S3_BUCKET}/\$f --region ${AWS_REGION}
                             done
-                        """
-                    }
+                        done
+                    """
                 }
             }
         }
@@ -131,10 +165,11 @@ pipeline {
 
     post {
         always { cleanWs() }
-        success { echo "🎉 Pipeline completed successfully!" }
-        failure { echo "❌ Pipeline failed. Check logs for details." }
+        success { echo "Pipeline completed successfully!" }
+        failure { echo "Pipeline failed. Check logs for details." }
     }
 }
+
 
 
 
